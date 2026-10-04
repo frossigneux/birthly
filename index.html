@@ -63,7 +63,8 @@
   .stat .val { font-size: 1rem; font-weight: 600; }
   .stat .sub { font-size: .78rem; color: var(--muted); }
   .stat.wide { grid-column: 1 / -1; }
-  .stat.wide .val { font-size: 1.1rem; }
+  .stat.wide { border-left: 6px solid var(--line); }
+  .stat.wide .val { font-size: 1.35rem; }
   .late { color: var(--danger) !important; font-weight: 600; }
 
   .hint { font-size: .78rem; color: var(--muted); margin-top: 8px; }
@@ -130,8 +131,8 @@
 <div id="banner" class="banner"></div>
 
 <div class="status">
-  <div class="stat wide">
-    <div class="lbl">Dernier antidouleur</div>
+  <div class="stat wide" id="s-next-card">
+    <div class="lbl">⏰ Prochaine prise</div>
     <div class="val" id="s-med">—</div>
     <div class="sub" id="s-med-next"></div>
   </div>
@@ -302,12 +303,21 @@ function renderStatus() {
   applyNight();
   const m = lastMed();
   const sMed = document.getElementById('s-med'), sNext = document.getElementById('s-med-next');
+  const card = document.getElementById('s-next-card');
   if (m) {
-    sMed.textContent = `${META[m.type].label}, ${ago(m.t)}`;
+    // Alternance : après du paracétamol vient l'ibuprofène, et inversement.
+    const next = m.type === 'paracetamol' ? 'ibuprofene' : 'paracetamol';
     const left = m.t + MED_DELAY_MS - Date.now();
-    sNext.textContent = left > 0 ? `Prochaine prise dans ${dur(left)} (${hhmm(m.t + MED_DELAY_MS)})` : `En retard de ${dur(left)}`;
-    sNext.className = 'sub ' + (left > 0 ? '' : 'late');
-  } else { sMed.textContent = '—'; sNext.textContent = ''; }
+    sMed.textContent = left > 0 ? `${META[next].label} dans ${dur(left)}` : `${META[next].label} maintenant`;
+    sMed.className = 'val ' + (left > 0 ? '' : 'late');
+    sNext.textContent = (left > 0 ? `à ${hhmm(m.t + MED_DELAY_MS)}` : `en retard de ${dur(left)}`)
+      + ` · dernier : ${META[m.type].label} à ${hhmm(m.t)}`;
+    card.style.borderLeftColor = META[next].color;
+  } else {
+    sMed.textContent = '—'; sMed.className = 'val';
+    sNext.textContent = 'Aucun antidouleur enregistré';
+    card.style.borderLeftColor = '';
+  }
 
   setStat('s-para', lastOf(e => e.type === 'paracetamol'));
   setStat('s-ibu', lastOf(e => e.type === 'ibuprofene'));
