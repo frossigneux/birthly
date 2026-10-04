@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f4f1" id="theme-color">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bébés">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%232a9d6f'/><text x='50' y='70' font-size='60' text-anchor='middle'>🍼</text></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%232a9d6f'/><text x='50' y='70' font-size='60' text-anchor='middle'>🍼</text></svg>">
+<title>Suivi bébés & médicaments</title>
+<style>
+  :root {
+    --bg: #f6f4f1; --card: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e4e1dc;
+    --para: #2f7dd1; --ibu: #8a4fd1; --mat: #2a9d6f; --dav: #d9822b;
+    --danger: #d64545; --ok: #2a9d6f;
+    --bar-h: calc(2 * 76px + 10px + 20px);
+  }
+  /* Thème sombre : préférence système, ou forcé la nuit (classe .night posée par le script) */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c; --card: #1b1f2a; --text: #eceef3; --muted: #9298a6; --line: #2a3040;
+      --para: #4a95e6; --ibu: #a273e6; --mat: #3cb586; --dav: #e69a4c;
+    }
+  }
+  :root.night {
+    --bg: #0d0f14; --card: #171a22; --text: #d9dce3; --muted: #858b98; --line: #252a36;
+    --para: #3d7cc0; --ibu: #8a62c2; --mat: #33996f; --dav: #c4823f;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { overscroll-behavior: none; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: calc(12px + env(safe-area-inset-top)) 12px calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px);
+    -webkit-text-size-adjust: 100%;
+  }
+  button { font: inherit; touch-action: manipulation; user-select: none; -webkit-user-select: none; cursor: pointer; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  h1 { font-size: 1.1rem; margin: 0; }
+  h2 { font-size: .85rem; margin: 20px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+  .toggle {
+    border: 1px solid var(--line); background: var(--card); color: var(--muted);
+    border-radius: 999px; padding: 0 14px; min-height: 44px; font-size: .9rem; font-weight: 600; white-space: nowrap;
+  }
+  .toggle.on { border-color: var(--ok); color: var(--ok); }
+
+  .banner {
+    display: none; background: var(--danger); color: #fff; border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 10px; font-weight: 600;
+  }
+  .banner.show { display: block; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 50% { opacity: .75; } }
+
+  .status { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; min-width: 0; }
+  .stat .lbl { font-size: .78rem; color: var(--muted); }
+  .stat .val { font-size: 1rem; font-weight: 600; }
+  .stat .sub { font-size: .78rem; color: var(--muted); }
+  .stat.wide { grid-column: 1 / -1; }
+  .stat.wide .val { font-size: 1.1rem; }
+  .late { color: var(--danger) !important; font-weight: 600; }
+
+  .hint { font-size: .78rem; color: var(--muted); margin-top: 8px; }
+
+  /* Barre d'actions fixée en bas, sous le pouce */
+  .actions {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    background: var(--bg); border-top: 1px solid var(--line);
+  }
+  .big {
+    border: 0; border-radius: 16px; height: 76px; font-size: 1.05rem; font-weight: 700; color: #fff;
+  }
+  .big:active { transform: scale(.96); filter: brightness(.92); }
+  .big small { display: block; font-weight: 500; font-size: .85rem; opacity: .9; }
+  .b-para { background: var(--para); } .b-ibu { background: var(--ibu); }
+  .b-mat { background: var(--mat); }  .b-dav { background: var(--dav); }
+
+  .day { background: var(--card); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+  .day-h { padding: 8px 12px; font-weight: 600; border-bottom: 1px solid var(--line); }
+  .day-h span { display: block; font-weight: 400; color: var(--muted); font-size: .8rem; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 0 0 0 12px; min-height: 48px; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .row .time { font-variant-numeric: tabular-nums; font-weight: 600; width: 3.2em; flex: none; }
+  .row .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .row .what { flex: 1; min-width: 0; }
+  .row .del { border: 0; background: none; color: var(--muted); font-size: 1.1rem; width: 48px; height: 48px; flex: none; }
+  .empty { color: var(--muted); text-align: center; padding: 20px; }
+
+  /* Dialogues en "bottom sheet" */
+  dialog {
+    border: 0; margin: auto 0 0; width: 100%; max-width: 100%;
+    border-radius: 20px 20px 0 0; padding: 20px 16px calc(16px + env(safe-area-inset-bottom));
+    background: var(--card); color: var(--text);
+  }
+  dialog[open] { animation: up .18s ease-out; }
+  @keyframes up { from { transform: translateY(40px); opacity: 0; } }
+  dialog::backdrop { background: rgba(0,0,0,.55); }
+  dialog h3 { margin: 0 0 14px; font-size: 1.15rem; }
+  dialog .choices { display: grid; gap: 10px; }
+  dialog .btns { display: flex; gap: 10px; margin-top: 18px; }
+  dialog button {
+    flex: 1; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    border-radius: 14px; min-height: 56px; font-size: 1.05rem;
+  }
+  dialog .choices button { font-weight: 600; }
+  dialog button.primary { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 700; }
+  dialog button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; }
+  dialog label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+  dialog input[type=time] {
+    font-size: 18px; padding: 10px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); min-height: 48px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>👶 Bébés &amp; médocs</h1>
+  <button id="alarm" class="toggle"></button>
+</header>
+
+<div id="banner" class="banner"></div>
+
+<div class="status">
+  <div class="stat wide">
+    <div class="lbl">Dernier antidouleur</div>
+    <div class="val" id="s-med">—</div>
+    <div class="sub" id="s-med-next"></div>
+  </div>
+  <div class="stat"><div class="lbl">Paracétamol</div><div class="val" id="s-para">—</div><div class="sub" id="s-para-at"></div></div>
+  <div class="stat"><div class="lbl">Ibuprofène</div><div class="val" id="s-ibu">—</div><div class="sub" id="s-ibu-at"></div></div>
+  <div class="stat"><div class="lbl">Tétée Matthieu</div><div class="val" id="s-mat">—</div><div class="sub" id="s-mat-at"></div></div>
+  <div class="stat"><div class="lbl">Tétée David</div><div class="val" id="s-dav">—</div><div class="sub" id="s-dav-at"></div></div>
+</div>
+
+<div class="hint" id="hint"></div>
+
+<h2>Historique</h2>
+<div id="history"></div>
+
+<nav class="actions">
+  <button class="big b-para" data-type="paracetamol">💊 Paracétamol</button>
+  <button class="big b-ibu" data-type="ibuprofene">💊 Ibuprofène</button>
+  <button class="big b-mat" data-type="tetee" data-who="Matthieu">🍼 Tétée<small>Matthieu</small></button>
+  <button class="big b-dav" data-type="tetee" data-who="David">🍼 Tétée<small>David</small></button>
+</nav>
+
+<dialog id="dlg"></dialog>
+
+<script>
+const STORE_KEY = 'birthly.journal.v1';
+const ALARM_KEY = 'birthly.alarm.v1';
+const MED_DELAY_MS = 3 * 3600 * 1000;
+const REPEAT_MS = 60 * 1000;        // répétition de l'alerte tant que non traitée
+const NIGHT_START = 20, NIGHT_END = 9;
+
+const META = {
+  paracetamol: { label: 'Paracétamol', color: 'var(--para)' },
+  ibuprofene:  { label: 'Ibuprofène',  color: 'var(--ibu)' },
+  Matthieu:    { label: 'Tétée Matthieu', color: 'var(--mat)' },
+  David:       { label: 'Tétée David',    color: 'var(--dav)' },
+};
+const INTENSITIES = ['légère', 'normale', 'intense'];
+
+// ---------- Stockage ----------
+function load() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch { return []; }
+}
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(journal)); }
+let journal = load();
+let alarmOn = localStorage.getItem(ALARM_KEY) === 'on';
+
+function addEntry(entry) {
+  journal.push({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), ...entry });
+  journal.sort((a, b) => a.t - b.t);
+  save();
+  lastAlertAt = 0;
+  if (canVibrate()) navigator.vibrate(30);
+  render();
+}
+function lastOf(pred) {
+  for (let i = journal.length - 1; i >= 0; i--) if (pred(journal[i])) return journal[i];
+  return null;
+}
+
+// ---------- Formatage ----------
+const hhmm = t => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+function dur(ms) {
+  const m = Math.floor(Math.abs(ms) / 60000);
+  if (m < 1) return "moins d'1 min";
+  const h = Math.floor(m / 60), r = m % 60;
+  return h ? `${h} h ${String(r).padStart(2, '0')}` : `${r} min`;
+}
+const ago = t => 'il y a ' + dur(Date.now() - t);
+const entryLabel = e => e.type === 'tetee' ? `${META[e.who].label} — ${e.intensity}` : META[e.type].label;
+
+// ---------- Dialogues ----------
+const dlg = document.getElementById('dlg');
+function openDialog(html, onReady) {
+  dlg.innerHTML = html;
+  if (!dlg.open) dlg.showModal();
+  onReady && onReady(dlg);
+}
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); }); // tap hors du panneau = annuler
+
+function nowTimeValue() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function timeValueToTs(v) {
+  const [h, m] = v.split(':').map(Number);
+  const d = new Date(); d.setHours(h, m, 0, 0);
+  if (d.getTime() > Date.now() + 60000) d.setDate(d.getDate() - 1); // heure "future" = hier soir
+  return d.getTime();
+}
+
+function askConfirm(entry) {
+  openDialog(`
+    <h3>Confirmer ?</h3>
+    <div><strong>${entryLabel(entry)}</strong></div>
+    <label>Heure <input type="time" id="when" value="${nowTimeValue()}"></label>
+    <div class="btns">
+      <button data-act="cancel">Annuler</button>
+      <button class="primary" data-act="ok">Confirmer</button>
+    </div>`, d => {
+    d.querySelector('[data-act=cancel]').onclick = () => d.close();
+    d.querySelector('[data-act=ok]').onclick = () => {
+      const v = d.querySelector('#when').value;
+      addEntry({ ...entry, t: v ? timeValueToTs(v) : Date.now() });
+      d.close();
+    };
+  });
+}
+
+function askIntensity(who) {
+  openDialog(`
+    <h3>Tétée ${who}</h3>
+    <div class="choices">
+      ${INTENSITIES.map(i => `<button data-i="${i}">${i[0].toUpperCase() + i.slice(1)}</button>`).join('')}
+    </div>
+    <div class="btns"><button data-act="cancel">Annuler</button></div>`, d => {
+    d.querySelector('[data-act=cancel]').onclick = () => d.close();
+    d.querySelectorAll('[data-i]').forEach(b => b.onclick = () => {
+      askConfirm({ type: 'tetee', who, intensity: b.dataset.i });
+    });
+  });
+}
+
+function askDelete(id) {
+  const e = journal.find(x => x.id === id);
+  if (!e) return;
+  openDialog(`
+    <h3>Supprimer cette entrée ?</h3>
+    <div>${hhmm(e.t)} — ${entryLabel(e)}</div>
+    <div class="btns">
+      <button data-act="cancel">Annuler</button>
+      <button class="danger" data-act="ok">Supprimer</button>
+    </div>`, d => {
+    d.querySelector('[data-act=cancel]').onclick = () => d.close();
+    d.querySelector('[data-act=ok]').onclick = () => {
+      journal = journal.filter(x => x.id !== id);
+      save(); render(); d.close();
+    };
+  });
+}
+
+document.querySelectorAll('.big').forEach(b => b.addEventListener('click', () => {
+  unlockAudio();
+  if (b.dataset.type === 'tetee') askIntensity(b.dataset.who);
+  else askConfirm({ type: b.dataset.type });
+}));
+
+// ---------- Affichage ----------
+function setStat(id, e) {
+  document.getElementById(id).textContent = e ? ago(e.t) : '—';
+  const at = document.getElementById(id + '-at');
+  at.textContent = e ? `à ${hhmm(e.t)}${e.intensity ? ' · ' + e.intensity : ''}` : '';
+}
+
+function lastMed() { return lastOf(e => e.type === 'paracetamol' || e.type === 'ibuprofene'); }
+function isOverdue() {
+  const m = lastMed();
+  return !!m && Date.now() - m.t >= MED_DELAY_MS;
+}
+
+function applyNight() {
+  const night = isNight();
+  document.documentElement.classList.toggle('night', night);
+  const dark = night || matchMedia('(prefers-color-scheme: dark)').matches;
+  document.getElementById('theme-color').content = night ? '#0d0f14' : dark ? '#12151c' : '#f6f4f1';
+}
+
+function renderStatus() {
+  applyNight();
+  const m = lastMed();
+  const sMed = document.getElementById('s-med'), sNext = document.getElementById('s-med-next');
+  if (m) {
+    sMed.textContent = `${META[m.type].label}, ${ago(m.t)}`;
+    const left = m.t + MED_DELAY_MS - Date.now();
+    sNext.textContent = left > 0 ? `Prochaine prise dans ${dur(left)} (${hhmm(m.t + MED_DELAY_MS)})` : `En retard de ${dur(left)}`;
+    sNext.className = 'sub ' + (left > 0 ? '' : 'late');
+  } else { sMed.textContent = '—'; sNext.textContent = ''; }
+
+  setStat('s-para', lastOf(e => e.type === 'paracetamol'));
+  setStat('s-ibu', lastOf(e => e.type === 'ibuprofene'));
+  setStat('s-mat', lastOf(e => e.type === 'tetee' && e.who === 'Matthieu'));
+  setStat('s-dav', lastOf(e => e.type === 'tetee' && e.who === 'David'));
+
+  const banner = document.getElementById('banner');
+  const late = isOverdue();
+  banner.classList.toggle('show', late);
+  banner.textContent = late ? `⚠️ Plus de 3 h depuis le dernier antidouleur (${hhmm(m.t)})` : '';
+  document.title = late ? '⚠️ Antidouleur !' : 'Suivi bébés & médicaments';
+
+  const btn = document.getElementById('alarm');
+  btn.textContent = alarmOn ? '🔔 Alarme ON' : '🔕 Alarme OFF';
+  btn.classList.toggle('on', alarmOn);
+
+  document.getElementById('hint').textContent = !alarmOn
+    ? 'Alarme coupée.'
+    : `Alerte si plus de 3 h sans antidouleur. ${isNight() ? (canVibrate() ? 'Nuit : vibration.' : 'Nuit : bip discret (vibration non disponible).') : 'Jour : bip.'} `
+      + ('wakeLock' in navigator ? "L'écran reste allumé tant que la page est ouverte." : "Gardez la page ouverte et l'écran allumé.");
+}
+
+function renderHistory() {
+  const box = document.getElementById('history');
+  if (!journal.length) { box.innerHTML = '<div class="empty">Aucune entrée pour le moment.</div>'; return; }
+  const days = new Map();
+  for (let i = journal.length - 1; i >= 0; i--) {
+    const e = journal[i];
+    const key = new Date(e.t).toDateString();
+    if (!days.has(key)) days.set(key, []);
+    days.get(key).push(e);
+  }
+  let html = '';
+  for (const [, list] of days) {
+    const title = new Date(list[0].t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const nMat = list.filter(e => e.who === 'Matthieu').length;
+    const nDav = list.filter(e => e.who === 'David').length;
+    const nPara = list.filter(e => e.type === 'paracetamol').length;
+    const nIbu = list.filter(e => e.type === 'ibuprofene').length;
+    html += `<div class="day"><div class="day-h">${title}
+      <span>Matthieu ${nMat} · David ${nDav} · Para ${nPara} · Ibu ${nIbu}</span></div>`;
+    for (const e of list) {
+      const color = META[e.type === 'tetee' ? e.who : e.type].color;
+      html += `<div class="row"><span class="time">${hhmm(e.t)}</span>
+        <span class="dot" style="background:${color}"></span>
+        <span class="what">${entryLabel(e)}</span>
+        <button class="del" data-id="${e.id}" aria-label="Supprimer">✕</button></div>`;
+    }
+    html += '</div>';
+  }
+  box.innerHTML = html;
+  box.querySelectorAll('.del').forEach(b => b.onclick = () => askDelete(b.dataset.id));
+}
+
+function render() { renderStatus(); renderHistory(); }
+
+// ---------- Alarme ----------
+let audioCtx = null;
+let lastAlertAt = 0;
+
+function unlockAudio() {
+  // Les navigateurs exigent un geste utilisateur pour autoriser le son.
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch {}
+}
+document.addEventListener('pointerdown', unlockAudio);
+
+function beep(volume = 0.4, count = 3) {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime;
+  for (let i = 0; i < count; i++) {
+    const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+    osc.type = 'sine'; osc.frequency.value = 880;
+    const s = t0 + i * 0.35;
+    gain.gain.setValueAtTime(0, s);
+    gain.gain.linearRampToValueAtTime(volume, s + 0.02);
+    gain.gain.linearRampToValueAtTime(0, s + 0.22);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(s); osc.stop(s + 0.25);
+  }
+}
+
+function isNight() { const h = new Date().getHours(); return h >= NIGHT_START || h < NIGHT_END; }
+function canVibrate() { return 'vibrate' in navigator; }
+
+function signal() {
+  if (isNight()) {
+    if (canVibrate()) navigator.vibrate([400, 200, 400, 200, 400]);
+    else beep(0.08, 2); // pas de vibration possible (ex. iPhone) : bip discret
+  } else {
+    beep();
+  }
+}
+
+// Garde l'écran allumé tant que l'alarme est active (sinon le script s'arrête écran verrouillé).
+let wakeLock = null;
+async function updateWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    if (alarmOn && !document.hidden && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!alarmOn && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch {}
+}
+
+document.getElementById('alarm').addEventListener('click', () => {
+  unlockAudio();
+  alarmOn = !alarmOn;
+  localStorage.setItem(ALARM_KEY, alarmOn ? 'on' : 'off');
+  lastAlertAt = 0;
+  if (alarmOn) signal(); // test immédiat du son / de la vibration
+  updateWakeLock();
+  renderStatus();
+});
+
+function tick() {
+  renderStatus();
+  if (alarmOn && isOverdue() && Date.now() - lastAlertAt >= REPEAT_MS) {
+    lastAlertAt = Date.now();
+    signal();
+  }
+}
+
+render();
+updateWakeLock();
+setInterval(tick, 10000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { render(); updateWakeLock(); }
+});
+</script>
+</body>
+</html>
