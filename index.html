@@ -67,6 +67,9 @@
   .stat.wide .val { font-size: 1.35rem; }
   .late { color: var(--danger) !important; font-weight: 600; }
 
+  .warn { margin-top: 12px; color: var(--danger); font-weight: 600; }
+  .warn:empty { display: none; }
+  .row .what small { display: block; font-size: .78rem; }
   .hint { font-size: .78rem; color: var(--muted); margin-top: 8px; }
 
   /* Barre d'actions fixée en bas, sous le pouce */
@@ -162,7 +165,9 @@
 <script>
 const STORE_KEY = 'birthly.journal.v1';
 const ALARM_KEY = 'birthly.alarm.v1';
-const MED_DELAY_MS = 3 * 3600 * 1000;
+const MED_DELAY_MS = 3 * 3600 * 1000;       // entre deux antidouleurs (alternés)
+const SAME_MED_MIN_MS = 6 * 3600 * 1000;    // minimum entre deux prises du même antidouleur
+const PAINKILLERS = ['paracetamol', 'ibuprofene'];
 const REPEAT_MS = 60 * 1000;        // répétition de l'alerte tant que non traitée
 const NIGHT_START = 20, NIGHT_END = 9;
 // Médicaments à prendre matin et soir : avant 14 h = prise du matin, après = prise du soir.
@@ -237,16 +242,27 @@ function askConfirm(entry) {
     <h3>Confirmer ?</h3>
     <div><strong>${entryLabel(entry)}</strong></div>
     <label>Heure <input type="time" id="when" value="${nowTimeValue()}"></label>
+    <div class="warn" id="warn"></div>
     <div class="btns">
       <button data-act="cancel">Annuler</button>
       <button class="primary" data-act="ok">Confirmer</button>
     </div>`, d => {
-    d.querySelector('[data-act=cancel]').onclick = () => d.close();
-    d.querySelector('[data-act=ok]').onclick = () => {
-      const v = d.querySelector('#when').value;
-      addEntry({ ...entry, t: v ? timeValueToTs(v) : Date.now() });
-      d.close();
+    const input = d.querySelector('#when'), ok = d.querySelector('[data-act=ok]');
+    // Heure non modifiée = heure réelle au moment de valider (pas celle d'ouverture du dialogue).
+    let edited = false;
+    const when = () => edited && input.value ? timeValueToTs(input.value) : Date.now();
+    const check = () => {
+      const c = tooClose(entry.type, when());
+      d.querySelector('#warn').textContent = c
+        ? `⚠️ ${META[entry.type].label} déjà pris à ${hhmm(c.t)}. Minimum 6 h entre deux prises : possible à partir de ${hhmm(c.t + SAME_MED_MIN_MS)}.`
+        : '';
+      ok.className = c ? 'danger' : 'primary';
+      ok.textContent = c ? 'Confirmer quand même' : 'Confirmer';
     };
+    input.oninput = () => { edited = true; check(); };
+    check();
+    d.querySelector('[data-act=cancel]').onclick = () => d.close();
+    ok.onclick = () => { addEntry({ ...entry, t: when() }); d.close(); };
   });
 }
 
@@ -281,9 +297,28 @@ function setStat(id, e) {
 }
 
 function lastMed() { return lastOf(e => e.type === 'paracetamol' || e.type === 'ibuprofene'); }
-function isOverdue() {
+// Prochaine prise : on alterne, au moins 3 h après le dernier antidouleur
+// et au moins 6 h après la dernière prise de la même molécule.
+function nextDose() {
   const m = lastMed();
-  return !!m && Date.now() - m.t >= MED_DELAY_MS;
+  if (!m) return null;
+  const type = m.type === 'paracetamol' ? 'ibuprofene' : 'paracetamol';
+  const same = lastOf(e => e.type === type);
+  const at = Math.max(m.t + MED_DELAY_MS, same ? same.t + SAME_MED_MIN_MS : 0);
+  return { type, at, last: m };
+}
+function isOverdue() {
+  const n = nextDose();
+  return !!n && Date.now() >= n.at;
+}
+// Autre prise du même antidouleur à moins de 6 h de t (avant ou après), sinon null.
+function tooClose(type, t, ignoreId) {
+  if (!PAINKILLERS.includes(type)) return null;
+  return journal.find(e => e.type === type && e.id !== ignoreId && Math.abs(e.t - t) < SAME_MED_MIN_MS) || null;
+}
+function nextAllowed(type) {
+  const last = lastOf(e => e.type === type);
+  return last ? last.t + SAME_MED_MIN_MS : null;
 }
 
 function slotRange(slot) {
@@ -308,8 +343,8 @@ function isActive(type) {
 // Liste des alertes en cours (affichées dans le bandeau, et qui déclenchent l'alarme).
 function currentAlerts() {
   const out = [];
-  const m = lastMed();
-  if (isOverdue()) out.push(`Plus de 3 h depuis le dernier antidouleur (${hhmm(m.t)})`);
+  const n = nextDose();
+  if (isOverdue()) out.push(`${META[n.type].label} à prendre (prévu à ${hhmm(n.at)})`);
   for (const type of TWICE_DAILY) {
     if (!isActive(type)) continue;
     for (const slot of ['matin', 'soir'])
@@ -337,18 +372,16 @@ function applyNight() {
 
 function renderStatus() {
   applyNight();
-  const m = lastMed();
+  const n = nextDose();
   const sMed = document.getElementById('s-med'), sNext = document.getElementById('s-med-next');
   const card = document.getElementById('s-next-card');
-  if (m) {
-    // Alternance : après du paracétamol vient l'ibuprofène, et inversement.
-    const next = m.type === 'paracetamol' ? 'ibuprofene' : 'paracetamol';
-    const left = m.t + MED_DELAY_MS - Date.now();
-    sMed.textContent = left > 0 ? `${META[next].label} dans ${dur(left)}` : `${META[next].label} maintenant`;
+  if (n) {
+    const left = n.at - Date.now();
+    sMed.textContent = left > 0 ? `${META[n.type].label} dans ${dur(left)}` : `${META[n.type].label} maintenant`;
     sMed.className = 'val ' + (left > 0 ? '' : 'late');
-    sNext.textContent = (left > 0 ? `à ${hhmm(m.t + MED_DELAY_MS)}` : `en retard de ${dur(left)}`)
-      + ` · dernier : ${META[m.type].label} à ${hhmm(m.t)}`;
-    card.style.borderLeftColor = META[next].color;
+    sNext.textContent = (left > 0 ? `à ${hhmm(n.at)}` : `en retard de ${dur(left)}`)
+      + ` · dernier : ${META[n.last.type].label} à ${hhmm(n.last.t)}`;
+    card.style.borderLeftColor = META[n.type].color;
   } else {
     sMed.textContent = '—'; sMed.className = 'val';
     sNext.textContent = 'Aucun antidouleur enregistré';
@@ -357,6 +390,10 @@ function renderStatus() {
 
   setStat('s-para', lastOf(e => e.type === 'paracetamol'));
   setStat('s-ibu', lastOf(e => e.type === 'ibuprofene'));
+  for (const [type, id] of [['paracetamol', 's-para-at'], ['ibuprofene', 's-ibu-at']]) {
+    const at = nextAllowed(type);
+    if (at && at > Date.now()) document.getElementById(id).textContent += ` · possible à ${hhmm(at)}`;
+  }
   renderTwiceDaily('augmentin', 's-aug');
   renderTwiceDaily('suppo', 's-sup');
   setStat('s-mat', lastOf(e => e.type === 'tetee' && e.who === 'Matthieu'));
@@ -374,7 +411,7 @@ function renderStatus() {
 
   document.getElementById('hint').textContent = !alarmOn
     ? 'Alarme coupée.'
-    : `Alerte si plus de 3 h sans antidouleur, ou Augmentin/Suppo oublié (matin avant 11 h, soir avant 21 h). ${isNight() ? (canVibrate() ? 'Nuit : vibration.' : 'Nuit : bip discret (vibration non disponible).') : 'Jour : bip.'} `
+    : `Alerte quand le prochain antidouleur est dû (3 h après le dernier, 6 h mini entre deux prises du même), ou Augmentin/Suppo oublié (matin avant 11 h, soir avant 21 h). ${isNight() ? (canVibrate() ? 'Nuit : vibration.' : 'Nuit : bip discret (vibration non disponible).') : 'Jour : bip.'} `
       + ('wakeLock' in navigator ? "L'écran reste allumé tant que la page est ouverte." : "Gardez la page ouverte et l'écran allumé.");
 }
 
@@ -401,9 +438,12 @@ function renderHistory() {
       <span>Matthieu ${nMat} · David ${nDav} · Para ${nPara} · Ibu ${nIbu} · Augm ${nAug} · Suppo ${nSup}</span></div>`;
     for (const e of list) {
       const color = META[e.type === 'tetee' ? e.who : e.type].color;
+      const prev = PAINKILLERS.includes(e.type) && lastOf(x => x.type === e.type && x.t < e.t);
+      const warn = prev && e.t - prev.t < SAME_MED_MIN_MS
+        ? `<small class="late">⚠️ ${dur(e.t - prev.t)} après le précédent (min. 6 h)</small>` : '';
       html += `<div class="row"><span class="time">${hhmm(e.t)}</span>
         <span class="dot" style="background:${color}"></span>
-        <span class="what">${entryLabel(e)}</span>
+        <span class="what">${entryLabel(e)}${warn}</span>
         <button class="del" data-id="${e.id}" aria-label="Supprimer">✕</button></div>`;
     }
     html += '</div>';
